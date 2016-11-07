@@ -18,7 +18,7 @@ open Lwt
 open Cohttp
 open Logging
 open Clock
-open Switch
+open Mswitch
 
 module Config = struct
   type t = {
@@ -27,7 +27,7 @@ module Config = struct
     pidfile: string option;
     configfile: string option;
     statedir: string option;
-  } with sexp
+  } [@@deriving sexp]
 
   let default = {
     path = "/var/run/message-switch/sock";
@@ -69,7 +69,7 @@ module Config = struct
 end
 
 (* Let's try to adopt the conventions of Rresult.R *)
-let get_ok, get_error = Shared_block.Result.(get_ok, get_error)
+let get_ok x = match x with | Result.Ok x -> x | Result.Error _ -> failwith "Expecting OK, got Error"
 
 module Lwt_result = struct
   let (>>=) m f = m >>= fun x -> f (get_ok x)
@@ -144,7 +144,7 @@ let make_server config =
     save statedir on_disk_queues'
     >>= fun () ->
     on_disk_queues := on_disk_queues';
-    return (`Ok ()) in
+    return (Result.Ok ()) in
 
   let redo_log = match config.statedir with
     | None -> return None
@@ -176,9 +176,17 @@ let make_server config =
       >>= fun qs ->
       on_disk_queues := qs;
       info "Reading the redo-log from %s" redo_log_path;
-      let open Lwt_result in
-      Block.connect ("buffered:" ^ redo_log_path)
+      Block.connect ~buffered:true redo_log_path
+      >>= fun block -> begin
+        match block with
+        | `Ok block -> Lwt.return block
+        | `Error e ->
+          match e with
+          | `Unknown s -> Lwt.fail (Failure (Printf.sprintf "Unexpected failure when opening block: %s" s))
+          | _ -> Lwt.fail (Failure "Other error")
+      end
       >>= fun block ->
+      let open Lwt_result in
       Redo_log.start ~flush_interval:5. block (process_redo_log statedir)
       >>= fun redo_log ->
       info "Redo-log playback complete: everything should be in sync";
@@ -198,8 +206,8 @@ let make_server config =
           | op :: ops ->
             ( Redo_log.push redo_log op
               >>= function
-              | `Ok _waiter -> loop ops
-              | `Error (`Msg txt) ->
+              | Result.Ok _waiter -> loop ops
+              | Result.Error (`Msg txt) ->
                 error "Failed to push to redo-log: %s" txt;
                 fail (Failure "Failed to push to redo-log") )in
         loop ops
@@ -218,7 +226,7 @@ let make_server config =
     >>= fun _ ->
     let conn_id_s = Cohttp.Connection.to_string conn_id in
     let open Protocol in
-    lwt body = Cohttp_lwt_body.to_string body in
+    Cohttp_lwt_body.to_string body >>= fun body ->
     let uri = Cohttp.Request.uri req in
     let path = Uri.path uri in
     match In.of_request body (Cohttp.Request.meth req) path with
@@ -235,7 +243,7 @@ let make_server config =
       ( match session, request with
         | Some session, In.Transfer { In.from = from; timeout = timeout; queues = names } ->
           let time = Int64.add (ns ()) (Int64.of_float (timeout *. 1e9)) in
-          List.iter (Switch.record_transfer time) names;
+          List.iter (record_transfer time) names;
           let from = match from with None -> -1L | Some x -> Int64.of_string x in
           let rec wait () =
             if Q.transfer !queues from names = [] then begin
@@ -317,7 +325,7 @@ let main ({ Config.daemonize; path; pidfile } as config) =
       | Some x ->
         Lwt_io.with_file ~flags:[Unix.O_WRONLY; Unix.O_CREAT] ~perm:0o0644
           ~mode:Lwt_io.output x (fun oc ->
-              lwt () = Lwt_io.write oc (Printf.sprintf "%d" (Unix.getpid ())) in
+              Lwt_io.write oc (Printf.sprintf "%d" (Unix.getpid ())) >>= fun () ->
               Lwt_io.flush oc
             ) in
 

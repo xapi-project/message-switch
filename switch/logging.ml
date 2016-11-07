@@ -59,7 +59,7 @@ let get (logger: logger) =
   then return_lines all
   else begin
     (* Block for at least one line *)
-    lwt all = Lwt_stream.nget 1 logger.stream in
+    Lwt_stream.nget 1 logger.stream >>= fun all ->
     return_lines all
   end
 
@@ -98,18 +98,17 @@ type traced_operation = [
     `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
   | `Get of string * string * [ `Producer | `Consumer | `Suspend |
     `Suspend_ack ] * [ `Int64 of int64 | `Bool of bool ]
-] with sexp
-type traced_operation_list = traced_operation list with sexp
+] [@@deriving sexp]
+type traced_operation_list = traced_operation list [@@deriving sexp]
 let trace _ = Lwt.return ()
 
 let rec logging_thread () =
-  lwt lines = get logger in
-  lwt () = Lwt_list.iter_s
-      (fun x ->
-         lwt () = Lwt_log.log ~logger:!Lwt_log.default ~level:Lwt_log.Notice x in
-         return ()
-      ) lines in
-  logging_thread ()
+  get logger >>= fun lines ->
+  Lwt_list.iter_s
+    (fun x ->
+       Lwt_log.log ~logger:!Lwt_log.default ~level:Lwt_log.Notice x
+    ) lines >>=
+  logging_thread
 
 module Lwt_logger = struct
   let debug fmt = ignore_fmt_lwt fmt
