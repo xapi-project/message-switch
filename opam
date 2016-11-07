@@ -11,15 +11,16 @@ remove: [
 depends: [
   "ocamlfind"
   "cohttp" {>= "0.15.0" }
-  "rpc"
+  "rpc" 
   "sexplib"
+  "ppx_sexp_conv"
   "ounit"
   "syslog"
   "uri"
   "re"
   "rpc"
   "mtime"
-  "mirage-block-unix"
+  "mirage-block-unix" {>= "2.4.0"}
   "shared-block-ring"
   "cmdliner"
   "ssl"
