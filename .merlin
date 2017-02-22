@@ -1,0 +1,7 @@
+PKG lwt lwt.unix cohttp cohttp.lwt rpclib rpclib.json rpclib.syntax message_switch async core
+S core
+S async
+B _build/core
+B _build/async
+
+
