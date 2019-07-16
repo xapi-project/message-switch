@@ -31,7 +31,7 @@ let with_lock m f =
 let thread_forever f v =
   let rec loop () =
     match f v with
-    | (_ : ('a, 'b) Message_switch_core.Mresult.result) -> assert false
+    | (_ : ('a, 'b) Mresult.result) -> assert false
     | exception e ->
       (loop[@tailcall]) ()
   in
@@ -200,9 +200,8 @@ let protect_connect path f =
     IO.disconnect conn;
     err
   | exception exn ->
-    let bt = Printexc.get_raw_backtrace () in
     IO.disconnect conn;
-    Printexc.raise_with_backtrace exn bt
+    raise exn
 
 module Client = struct
 
