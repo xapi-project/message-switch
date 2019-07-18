@@ -33,6 +33,7 @@ let thread_forever f v =
     match f v with
     | (_ : ('a, 'b) Mresult.result) -> assert false
     | exception e ->
+      Thread.delay 1.0;
       (loop[@tailcall]) ()
   in
   Thread.create loop ()
@@ -203,6 +204,10 @@ let protect_connect path f =
     IO.disconnect conn;
     raise exn
 
+let do_rpc conn v =
+    try Connection.rpc conn v
+    with e -> `Error (`Message_switch (`Communication e))
+
 module Client = struct
 
   type 'a io = 'a
@@ -212,6 +217,7 @@ module Client = struct
     | `Unsuccessful_response
     | `Timeout
     | `Queue_deleted of string
+    | `Communication of exn
   ]
 
   let (>>|=) m f = match m with
@@ -220,6 +226,7 @@ module Client = struct
     | `Error (`Message_switch `Unsuccessful_response) -> `Error (`Message_switch `Unsuccessful_response)
     | `Error (`Message_switch `Timeout) -> `Error (`Message_switch `Timeout)
     | `Error (`Message_switch (`Queue_deleted name)) -> `Error (`Message_switch (`Queue_deleted name))
+    | `Error (`Message_switch (`Communication e)) -> `Error (`Message_switch (`Communication e))
 
   type 'a result = ('a, [ `Message_switch of error]) Mresult.result
 
@@ -233,6 +240,8 @@ module Client = struct
       Format.pp_print_string fmt "Timeout"
     | `Message_switch (`Queue_deleted name) ->
       Format.fprintf fmt "The queue %s has been deleted" name
+    | `Message_switch (`Communication e) ->
+      Format.fprintf fmt "There was a communication failure with message-switch: %s" (Printexc.to_string e)
 
   let error_to_msg = function
     | `Ok x -> `Ok x
@@ -259,17 +268,17 @@ module Client = struct
     let token = IO.whoami () in
     let reconnect () =
       protect_connect switch @@ fun requests_conn ->
-      Connection.rpc requests_conn (In.Login token)
+      do_rpc requests_conn (In.Login token)
       >>|= fun (_: string) ->
       protect_connect switch @@ fun events_conn ->
-      Connection.rpc events_conn (In.Login token)
+      do_rpc events_conn (In.Login token)
       >>|= fun (_: string) ->
       `Ok (requests_conn, events_conn) in
 
     reconnect ()
     >>|= fun (requests_conn, events_conn) ->
     let wakener = Hashtbl.create 10 in
-    Connection.rpc requests_conn (In.CreateTransient token)
+    do_rpc requests_conn (In.CreateTransient token)
     >>|= fun reply_queue_name ->
     let requests_m = IO.Mutex.create () in
     let t = { requests_conn; events_conn; requests_m; wakener; reply_queue_name } in
@@ -289,7 +298,7 @@ module Client = struct
         } in
         match (
           let frame = In.Transfer transfer in
-          Connection.rpc t.events_conn frame
+          do_rpc t.events_conn frame
           >>|= fun raw ->
           (try `Ok (Out.transfer_of_rpc (Jsonrpc.of_string raw))
            with e -> `Error (`Message_switch `Failed_to_read_response))
@@ -305,7 +314,7 @@ module Client = struct
                      match m.Message.kind with
                      | Message.Response j ->
                        if Hashtbl.mem wakener j then begin
-                         Connection.rpc t.events_conn (In.Ack i)
+                         do_rpc t.events_conn (In.Ack i)
                          >>|= fun (_: string) ->
                          IO.Ivar.fill (Hashtbl.find wakener j) (`Ok m);
                          `Ok ()
@@ -355,13 +364,13 @@ module Client = struct
     let rec loop () =
       match with_lock c.requests_m
           (fun () ->
-             Connection.rpc c.requests_conn (In.CreatePersistent dest_queue_name)
+             do_rpc c.requests_conn (In.CreatePersistent dest_queue_name)
              >>|= fun (_: string) ->
              let msg = In.Send(dest_queue_name, {
                  Message.payload = x;
                  kind = Message.Request c.reply_queue_name
                }) in
-             Connection.rpc c.requests_conn msg
+             do_rpc c.requests_conn msg
              >>|= fun (id: string) ->
              match message_id_opt_of_rpc (Jsonrpc.of_string id) with
              | None ->
@@ -390,7 +399,7 @@ module Client = struct
   let list ~t:c ~prefix ?(filter=`All) () =
     IO.Mutex.with_lock c.requests_m
       (fun () ->
-         Connection.rpc c.requests_conn (In.List(prefix, filter))
+         do_rpc c.requests_conn (In.List(prefix, filter))
          >>|= fun result ->
          `Ok (Out.string_list_of_rpc (Jsonrpc.of_string result))
       )
@@ -398,7 +407,7 @@ module Client = struct
   let ack ~t:c ~message:(name, id) () =
     IO.Mutex.with_lock c.requests_m
       (fun () ->
-         Connection.rpc c.requests_conn (In.Ack(name, id))
+         do_rpc c.requests_conn (In.Ack(name, id))
          >>|= fun (_: string) ->
          `Ok ()
       )
@@ -406,7 +415,7 @@ module Client = struct
   let diagnostics ~t:c () =
     IO.Mutex.with_lock c.requests_m
       (fun () ->
-         Connection.rpc c.requests_conn In.Diagnostics
+         do_rpc c.requests_conn In.Diagnostics
          >>|= fun (result: string) ->
          `Ok (Diagnostics.t_of_rpc (Jsonrpc.of_string result))
       )
@@ -414,7 +423,7 @@ module Client = struct
   let trace ~t:c ?(from=0L) ?(timeout=0.) () =
     IO.Mutex.with_lock c.requests_m
       (fun () ->
-         Connection.rpc c.requests_conn (In.Trace(from, timeout))
+         do_rpc c.requests_conn (In.Trace(from, timeout))
          >>|= fun (result: string) ->
          `Ok (Out.trace_of_rpc (Jsonrpc.of_string result))
       )
@@ -422,7 +431,7 @@ module Client = struct
   let shutdown ~t:c () =
     IO.Mutex.with_lock c.requests_m
       (fun () ->
-        Connection.rpc c.requests_conn In.Shutdown
+        do_rpc c.requests_conn In.Shutdown
         >>|= fun (_: string) ->
         IO.IO.return (`Ok ())
       )
@@ -430,7 +439,7 @@ module Client = struct
   let destroy ~t ~queue:queue_name () =
     IO.Mutex.with_lock t.requests_m
       (fun () ->
-        Connection.rpc t.requests_conn (In.Destroy queue_name)
+        do_rpc t.requests_conn (In.Destroy queue_name)
         >>|= fun (_: string) ->
         IO.IO.return (`Ok ())
       )
@@ -442,6 +451,7 @@ module Server = struct
   type error = [
     | `Failed_to_read_response
     | `Unsuccessful_response
+    | `Communication of exn
   ]
 
   type 'a result = ('a, [ `Message_switch of error ]) Mresult.result
@@ -452,6 +462,8 @@ module Server = struct
       Format.pp_print_string fmt "Failed to read response from the message-switch"
     | `Message_switch `Unsuccessful_response ->
       Format.pp_print_string fmt "Received an unexpected failure from the message-switch"
+    | `Message_switch (`Communication e) ->
+      Format.fprintf fmt "There was a communication failure with message-switch: %s" (Printexc.to_string e)
 
   let error_to_msg = function
     | `Ok x -> `Ok x
@@ -464,17 +476,17 @@ module Server = struct
 
   type t = unit
 
-  let listen ~process ~switch ~queue:name () =
+  let listen ~process ~switch ~queue:name () : t result io =
     let open IO.IO in
     let token = IO.whoami () in
     let reconnect () =
       protect_connect switch @@ fun request_conn ->
-      Connection.rpc request_conn (In.Login token)
+      do_rpc request_conn (In.Login token)
       >>|= fun (_: string) ->
       protect_connect switch @@ fun reply_conn ->
-      Connection.rpc reply_conn (In.Login token)
+      do_rpc reply_conn (In.Login token)
       >>|= fun (_: string) ->
-      Connection.rpc request_conn (In.Login token)
+      do_rpc request_conn (In.Login token)
       >>|= fun (_: string) ->
       `Ok (request_conn, reply_conn) in
 
@@ -483,7 +495,7 @@ module Server = struct
     (* Only allow one reply RPC at a time (no pipelining) *)
     let mutex = IO.Mutex.create () in
 
-    Connection.rpc request_conn (In.CreatePersistent name)
+    do_rpc request_conn (In.CreatePersistent name)
     >>|= fun (_: string) ->
 
     let rec loop ((request_conn, reply_conn) as connections) from =
@@ -493,7 +505,7 @@ module Server = struct
         queues = [ name ];
       } in
       let frame = In.Transfer transfer in
-      Connection.rpc request_conn frame >>= function
+      do_rpc request_conn frame >>= function
       | `Error _e ->
         IO.Mutex.with_lock mutex (fun () ->
             IO.disconnect request_conn;
@@ -523,11 +535,11 @@ module Server = struct
                             return ()
                           | Message.Request reply_to ->
                             let request = In.Send(reply_to, { Message.kind = Message.Response i; payload = response }) in
-                            IO.Mutex.with_lock mutex (fun () -> Connection.rpc reply_conn request) >>= fun _ ->
+                            IO.Mutex.with_lock mutex (fun () -> do_rpc reply_conn request) >>= fun _ ->
                             return ()
                         end >>= fun () ->
                         let request = In.Ack i in
-                        IO.Mutex.with_lock mutex (fun () -> Connection.rpc reply_conn request) >>= fun _ ->
+                        IO.Mutex.with_lock mutex (fun () -> do_rpc reply_conn request) >>= fun _ ->
                         ()
                      ) () in ()
               ) transfer.Out.messages;
