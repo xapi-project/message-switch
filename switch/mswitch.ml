@@ -101,7 +101,7 @@ let snapshot queues =
 
 open Protocol
 
-let process_request conn_id queues session request =
+let process_request conn_id queues session request trace =
   match (session, request) with
   (* Only allow Login, Get, Trace and Diagnostic messages if there is no session *)
   | _, In.Login session ->
@@ -111,7 +111,7 @@ let process_request conn_id queues session request =
   | _, In.Diagnostics ->
       return (None, Out.Diagnostics (snapshot queues))
   | _, In.Trace (from, timeout) ->
-      Traceext.get from timeout >>= fun events ->
+      Traceext.get trace from timeout >>= fun events ->
       return (None, Out.Trace {Out.events})
   | _, In.Get path ->
       let path = if path = [] || path = [""] then ["index.html"] else path in
@@ -137,7 +137,7 @@ let process_request conn_id queues session request =
   | Some session, In.Destroy name ->
       return (Some (Q.Directory.remove queues name), Out.Destroy)
   | Some session, In.Ack (name, id) ->
-      Traceext.add
+      Traceext.add trace
         Event.
           {
             time= Unix.gettimeofday ()
@@ -178,7 +178,7 @@ let process_request conn_id queues session request =
                   None
             )
           in
-          Traceext.add
+          Traceext.add trace
             Event.
               {
                 time= Unix.gettimeofday ()
@@ -196,7 +196,7 @@ let process_request conn_id queues session request =
       | None ->
           return (None, Out.Send None)
       | Some (id, op) ->
-          Traceext.add
+          Traceext.add trace
             Event.
               {
                 time= Unix.gettimeofday ()
