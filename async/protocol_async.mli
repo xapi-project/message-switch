@@ -17,8 +17,6 @@ open Core.Std
 open Async.Std
 open Message_switch
 
-module Client : S.CLIENT
-  with type 'a io = 'a Deferred.t
+module Client : S.CLIENT with type 'a io = 'a Deferred.t
 
-module Server : S.SERVER
-  with type 'a io = 'a Deferred.t
+module Server : S.SERVER with type 'a io = 'a Deferred.t

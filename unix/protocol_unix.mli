@@ -15,8 +15,6 @@
  *)
 open Message_switch
 
-module Client: S.CLIENT
-  with type 'a io = 'a
+module Client : S.CLIENT with type 'a io = 'a
 
-module Server : S.SERVER
-  with type 'a io = 'a
+module Server : S.SERVER with type 'a io = 'a

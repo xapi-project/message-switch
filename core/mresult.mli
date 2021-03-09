@@ -12,16 +12,14 @@
  * GNU Lesser General Public License for more details.
  *)
 
-type ('a, 'b) result = [
-| `Ok of 'a 
-| `Error of 'b
-]
+type ('a, 'b) result = [`Ok of 'a | `Error of 'b]
 
 include Monad.S2 with type ('a, 'b) t := ('a, 'b) result
 
-val ok: 'a -> ('a, 'b) result
+val ok : 'a -> ('a, 'b) result
 
-val all: ('a, 'b) result list -> ('a list, 'b) result
+val all : ('a, 'b) result list -> ('a list, 'b) result
 
-val get_ok: ('a, 'b) result -> 'a
-val get_error: ('a, 'b) result -> 'b
+val get_ok : ('a, 'b) result -> 'a
+
+val get_error : ('a, 'b) result -> 'b

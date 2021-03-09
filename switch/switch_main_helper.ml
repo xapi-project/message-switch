@@ -17,4 +17,3 @@ open Lwt
 
 (* Held while processing a non-blocking request *)
 let m = Lwt_mutex.create ()
-
