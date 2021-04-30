@@ -3,6 +3,7 @@ all: build doc
 
 NAME=message_switch
 J=4
+.PHONY: release build install uninstall clean test doc format
 
 export OCAMLRUNPARAM=b
 
@@ -32,6 +33,9 @@ setup.data: setup.bin
 
 build: setup.data setup.bin
 	@./setup.bin -build -j $(J)
+
+format:
+	git ls-files '*.ml*' | xargs ocamlformat -i
 
 doc: setup.data setup.bin
 	@./setup.bin -doc -j $(J)

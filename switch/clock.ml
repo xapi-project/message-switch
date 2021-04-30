@@ -19,14 +19,15 @@ let use_mtime () = Mtime.(to_ns_uint64 (elapsed ()))
 let use_timeofday () = Int64.of_float (Unix.gettimeofday () *. 1e9)
 
 let ns =
-  if Mtime.available
-  then use_mtime
-  else begin
-    Logging.warn "No monotonic clock source: falling back to calendar time";
+  if Mtime.available then
+    use_mtime
+  else (
+    Logging.warn "No monotonic clock source: falling back to calendar time" ;
     use_timeofday
-  end
+  )
 
 include Unix
+
 let time = gettimeofday
 
 let s () = Int64.to_float (ns ()) /. 1e9

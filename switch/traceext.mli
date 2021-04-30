@@ -14,36 +14,22 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Cohttp_lwt_unix
-open Lwt
-open Protocol
+type t
 
-let path = ref "/var/run/message-switch/sock"
+(** various limit settings for tracing *)
+type config
 
-let name = ref "server"
+val term : config Cmdliner.Term.t
+(** command-line configuration for tracing *)
 
-let t, u = Lwt.task ()
+val init : config -> t
+(** [init config] initializes the trace extension according to [config] *)
 
-let process = function
-  | "shutdown" ->
-      Lwt.wakeup u () ; return "ok"
-  | x ->
-      return x
+val add : t -> Protocol.Event.t -> unit
+(** [add t event] adds a new event to the trace buffer [t] without blocking.
+    If the trace buffer is full then the oldest event is dropped. *)
 
-let main () =
-  Protocol_lwt.Server.listen ~process ~switch:!path ~queue:!name () >>= fun _ ->
-  t >>= fun () -> Lwt_unix.sleep 1.
-
-let _ =
-  Arg.parse
-    [
-      ( "-path"
-      , Arg.Set_string path
-      , Printf.sprintf "path broker listens on (default %s)" !path )
-    ; ( "-name"
-      , Arg.Set_string name
-      , Printf.sprintf "name to send message to (default %s)" !name )
-    ]
-    (fun x -> Printf.fprintf stderr "Ignoring unexpected argument: %s" x)
-    "Respond to RPCs on a name" ;
-  Lwt_main.run (main ())
+val get : t -> int64 -> float -> (int64 * Protocol.Event.t) list Lwt.t
+(** [get t from timeout] blocks until some new trace events are
+    available in [t] (whose index is > [from]) and returns a list of
+    [index, Event.t] *)
