@@ -12,28 +12,35 @@
  * GNU Lesser General Public License for more details.
  *)
 
-type ('a, 'b) result = [
-| `Ok of 'a 
-| `Error of 'b
-]
+type ('a, 'b) result = [`Ok of 'a | `Error of 'b]
 
 let bind v f = match v with `Ok v -> f v | `Error _ as e -> e
+
 let ( >>= ) = bind
 
 let return x = `Ok x
+
 let ok = return
 
 let all xs =
   let rec loop acc = function
-  | [] -> return (List.rev acc)
-  | `Ok x :: xs -> loop (x :: acc) xs
-  | `Error x :: _ -> `Error x in
+    | [] ->
+        return (List.rev acc)
+    | `Ok x :: xs ->
+        loop (x :: acc) xs
+    | `Error x :: _ ->
+        `Error x
+  in
   loop [] xs
 
 let get_ok = function
-| `Ok x -> x
-| `Error _ -> raise (Invalid_argument "get_ok encountered an `Error")
+  | `Ok x ->
+      x
+  | `Error _ ->
+      raise (Invalid_argument "get_ok encountered an `Error")
 
 let get_error = function
-| `Error x -> x
-| `Ok _ -> raise (Invalid_argument "get_error encountered an `Ok")
+  | `Error x ->
+      x
+  | `Ok _ ->
+      raise (Invalid_argument "get_error encountered an `Ok")
