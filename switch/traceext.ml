@@ -57,8 +57,6 @@ end = struct
         orig
     | Rpc.Enum l ->
         Rpc.Enum (List.rev_map truncate_rpc l |> List.rev)
-    | Rpc.Base64 s ->
-        Rpc.Base64 (truncate s)
     | Rpc.Dict d ->
         Rpc.Dict (List.rev_map truncate_rpc_kv d |> List.rev)
     | Rpc.String s ->
