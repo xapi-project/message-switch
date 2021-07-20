@@ -15,7 +15,8 @@
 (* a similar interface to Core's MONAD.S2 *)
 module type S2 = sig
   type ('a, 'b) t
+
   val ( >>= ) : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
+
   val return : 'a -> ('a, 'b) t
 end
-
