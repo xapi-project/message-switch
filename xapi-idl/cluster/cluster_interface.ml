@@ -62,6 +62,7 @@ type cluster_config = {
   ; config_version: int64
   ; cluster_token_timeout_ms: int64
   ; cluster_token_coefficient_ms: int64
+  ; verify_tls_certs: bool [@default false]
   ; pems: pems option
 }
 [@@deriving rpcty]
