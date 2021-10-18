@@ -9,7 +9,8 @@ let _ =
          Fe.cmdargs= ["/bin/fecho"; "hello"; "test"]
        ; id_to_fd_map= [(uuid, Some (Unixext.int_of_file_descr Unix.stdout))]
        ; env= []
-       }) ;
+       }
+    ) ;
   if die_at = 1 then exit 1 ;
   Printf.fprintf stderr "Done write raw rpc\n%!" ;
   let response = Fecomms.read_raw_rpc sock in
